@@ -102,7 +102,9 @@
 
             const reader = new FileReader();
             reader.onload = e => {
-                originalImage.src = e.target.result;
+                const blob = new Blob([e.target.result], { type: file.type });
+                const imageUrl = URL.createObjectURL(blob);
+                originalImage.src = imageUrl;
                 originalFile = new Uint8Array(e.target.result);
                 status.textContent = 'Processing...';
                 applyFilters();
