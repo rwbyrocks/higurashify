@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Higurashify Image Filter</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f0f0; }
+        .container { display: flex; gap: 20px; margin-top: 20px; }
+        .controls { width: 300px; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .image-preview { display: flex; flex-direction: column; gap: 10px; }
+        img { max-width: 500px; max-height: 500px; border: 1px solid #ccc; }
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: flex; align-items: center; justify-content: space-between; }
+        .control-group input[type="range"] { flex-grow: 1; margin-left: 10px; }
+        h2, h3 { text-align: center; }
+        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 10px; font-style: italic; }
+    </style>
+</head><body>
+    <h1>Higurashify Image Filter</h1>
+    <div class="container">
+        <div class="controls">
+            <h3>Controls</h3>
+            <input type="file" id="imageLoader" name="imageLoader"/>
+            <hr>
+
+            <div class="control-group">
+                <label><input type="checkbox" id="toggleEdges" checked> Edge Mask</label>
+                <label>Threshold: <input type="range" id="edgeThreshold" min="0" max="100" value="25"> <span id="edgeThresholdValue">25%</span></label>
+                <label>Opacity: <input type="range" id="edgeOpacity" min="0" max="100" value="50"> <span id="edgeOpacityValue">50%</span></label>
+            </div>
+            <hr>
+
+            <div class="control-group">
+                <label><input type="checkbox" id="toggleLevels" checked> Levels</label>
+                <label>Black Point: <input type="range" id="levelsBlack" min="0" max="49" value="20"> <span id="levelsBlackValue">20%</span></label>
+                <label>White Point: <input type="range" id="levelsWhite" min="50" max="100" value="80"> <span id="levelsWhiteValue">80%</span></label>
+            </div>
+            <hr>
+
+            <div class="control-group">
+                <label><input type="checkbox" id="toggleUnsharp" checked> Unsharp Mask</label>
+                <label>Sigma: <input type="range" id="unsharpSigma" min="0" max="10" step="0.1" value="1.0"> <span id="unsharpSigmaValue">1.0</span></label>
+            </div>
+            <hr>
+
+            <div class="control-group">
+                <label><input type="checkbox" id="toggleMotionBlur" checked> Motion Blur</label>
+                <label>Sigma: <input type="range" id="motionBlurSigma" min="0" max="50" value="10"> <span id="motionBlurSigmaValue">10</span></label>
+                <label>Angle: <input type="range" id="motionBlurAngle" min="-180" max="180" value="-25"> <span id="motionBlurAngleValue">-25°</span></label>
+                <label>Opacity: <input type="range" id="motionBlurOpacity" min="0" max="100" value="70"> <span id="motionBlurOpacityValue">70%</span></label>
+            </div>
+            <hr>
+
+            <div class="control-group">
+                <label><input type="checkbox" id="togglePosterize" checked> Posterize</label>
+                <label>Levels: <input type="range" id="posterizeLevels" min="2" max="30" value="9"> <span id="posterizeLevelsValue">9</span></label>
+            </div>
+            <hr>
+
+            <button id="saveButton">Save as PNG</button>
+            <div id="status">Select an image to begin.</div>
+        </div>
+        <div class="image-preview">
+            <div>
+                <h3>Original</h3>
+                <img id="originalImage" src="#" alt="Original Image" />
+            </div>
+            <div>
+                <h3>Processed</h3>
+                <img id="processedImage" src="#" alt="Processed Image" />
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Magick, MagickFormat, initializeImageMagick } from 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm/dist/magick.mjs';
+
+        // DOM Elements
+        const imageLoader = document.getElementById('imageLoader');
+        const originalImage = document.getElementById('originalImage');
+        const processedImage = document.getElementById('processedImage');
+        const saveButton = document.getElementById('saveButton');
+        const status = document.getElementById('status');
+
+        // All controls
+        const controls = document.querySelectorAll('.controls input');
+
+        let inputFileName = 'input.png';
+        let originalFile = null;
+
+        // Initialize ImageMagick
+        initializeImageMagick().then(() => {
+            status.textContent = 'ImageMagick ready. Select an image.';
+        });
+
+        imageLoader.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                originalImage.src = e.target.result;
+                originalFile = new Uint8Array(e.target.result);
+                status.textContent = 'Processing...';
+                applyFilters();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        controls.forEach(control => {
+            control.addEventListener('input', () => {
+                // Update slider value displays
+                if (control.type === 'range') {
+                    const valueEl = document.getElementById(control.id + 'Value');
+                    if (valueEl) {
+                        let value = control.value;
+                        if (control.id.includes('Opacity') || control.id.includes('Black') || control.id.includes('White') || control.id.includes('Threshold')) {
+                            value += '%';
+                        } else if (control.id.includes('Angle')) {
+                            value += '°';
+                        }
+                        valueEl.textContent = value;
+                    }
+                }
+
+                if (originalFile) {
+                    status.textContent = 'Processing...';
+                    // Debounce processing to avoid lagging on slider drag
+                    clearTimeout(window.applyTimeout);
+                    window.applyTimeout = setTimeout(applyFilters, 200);
+                }
+            });
+        });
+
+        async function applyFilters(isSaving = false) {
+            if (!originalFile) return;
+
+            const files = [{ name: inputFileName, content: originalFile }];
+
+            const commands = [];
+
+            // --- STEP 1: Generate Edge Mask ---
+            if (document.getElementById('toggleEdges').checked) {
+                const threshold = document.getElementById('edgeThreshold').value;
+                const opacity = document.getElementById('edgeOpacity').value / 100;
+                commands.push([
+                    'convert', inputFileName,
+                    '-colorspace', 'Gray',
+                    '-morphology', 'Convolve', 'Sobel',
+                    '-negate',
+                    '-threshold', `${threshold}%`,
+                    '-alpha', 'set', '-channel', 'A', '-evaluate', 'multiply', opacity, '+channel',
+                    'edge.png'
+                ]);
+            }
+
+            let lastImage = inputFileName;
+
+            // --- STEP 2: Apply main image filters ---
+            let tmp1 = lastImage;
+            if (document.getElementById('toggleLevels').checked) {
+                const black = document.getElementById('levelsBlack').value;
+                const white = document.getElementById('levelsWhite').value;
+                commands.push(['convert', lastImage, '-level', `${black}x${white}%`, 'tmp1.png']);
+                tmp1 = 'tmp1.png';
+                lastImage = tmp1;
+            }
+
+            let tmp2 = lastImage;
+            if (document.getElementById('toggleUnsharp').checked) {
+                const sigma = document.getElementById('unsharpSigma').value;
+                commands.push(['convert', lastImage, '-unsharp', `0x${sigma}`, 'tmp2.png']);
+                tmp2 = 'tmp2.png';
+                lastImage = tmp2;
+            }
+
+            let tmp6 = lastImage;
+            if (document.getElementById('toggleMotionBlur').checked) {
+                const sigma = document.getElementById('motionBlurSigma').value;
+                const angle = document.getElementById('motionBlurAngle').value;
+                const opacity = document.getElementById('motionBlurOpacity').value;
+
+                // Motion blur layer
+                commands.push(['convert', lastImage, '-motion-blur', `0x${sigma}${angle}`, 'tmp4.png']);
+                // Set opacity on motion blur layer
+                commands.push(['convert', 'tmp4.png', '-alpha', 'set', '-channel', 'A', '-evaluate', 'set', `${opacity}%`, '+channel', 'tmp5.png']);
+                // Composite over the sharpened image
+                commands.push(['convert', tmp2, 'tmp5.png', '-compose', 'over', '-composite', 'tmp6.png']);
+                tmp6 = 'tmp6.png';
+                lastImage = tmp6;
+            }
+
+            // --- STEP 3: Posterize ---
+            let tmp7 = lastImage;
+            if (document.getElementById('togglePosterize').checked) {
+                const levels = document.getElementById('posterizeLevels').value;
+                commands.push(['convert', lastImage, '-posterize', levels, 'tmp7.png']);
+                tmp7 = 'tmp7.png';
+                lastImage = tmp7;
+            }
+
+            // --- STEP 4: Final composite with edge overlay ---
+            if (document.getElementById('toggleEdges').checked) {
+                commands.push(['convert', lastImage, 'edge.png', '-compose', 'Multiply', '-composite', 'output.png']);
+            } else {
+                commands.push(['convert', lastImage, 'output.png']);
+            }
+
+            const result = await Magick.call(files, commands);
+
+            const output = result.outputFiles[0];
+            const blob = new Blob([output.buffer], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+
+            if (isSaving) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'higurashified.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                status.textContent = 'Image saved!';
+                 setTimeout(() => { status.textContent = 'Ready.'; }, 3000);
+            } else {
+                processedImage.src = url;
+                status.textContent = 'Ready.';
+            }
+        }
+
+        saveButton.addEventListener('click', () => {
+            if (originalFile) {
+                status.textContent = 'Saving full quality image...';
+                applyFilters(true);
+            } else {
+                alert('Please load an image first.');
+            }
+        });
+
+    </script>
+</body>
+</html>
