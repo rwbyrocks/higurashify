@@ -161,13 +161,13 @@ document.querySelector('input[type=file]').addEventListener('change',e=>{const f
   const cropX = Math.floor((srcW - cropW) / 2);
   const cropY = Math.floor((srcH - cropH) / 2);
 
-  // --- Scale down if wider than 1920 ---
+  // --- Scale down if taller than 1080 ---
   let finalW = cropW;
   let finalH = cropH;
-  if (finalW > 1920) {
-    const scale = 1920 / finalW;
-    finalW = 1920;
-    finalH = Math.round(finalH * scale);
+  if (finalH > 1080) {
+    const scale = 1080 / finalH;
+    finalH = 1080;
+    finalW = Math.round(finalW * scale);
   }
 
   originalCanvas.width = previewCanvas.width = finalW;
