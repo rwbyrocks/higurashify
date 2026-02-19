@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -26,9 +25,7 @@
   <div><h3>Original</h3><canvas id="originalCanvas"></canvas></div>
   <div><h3>Preview</h3><canvas id="previewCanvas"></canvas></div>
 </div>
-<div class="controls" id="controls"></div>
-
-<script>
+<div class="controls" id="controls"></div><script>
 const originalCanvas = document.getElementById('originalCanvas');
 const previewCanvas = document.getElementById('previewCanvas');
 const oCtx = originalCanvas.getContext('2d');
@@ -45,7 +42,10 @@ const settings = {
   unsharp:true, unsharpAmount:1,
   motionBlur:true, blurRadius:10, blurAngle:-25, blurOpacity:0.7,
   posterize:true, posterizeLevels:9,
-  edges:true, edgeThreshold:80, edgeOpacity:0.5
+  edges:true, edgeThreshold:80, edgeOpacity:0.5,
+  // New preprocessing controls
+  aspectMode:'4:3', // '4:3', '16:9', '1:1', 'original'
+  maxHeight:1080
 };
 
 function addSlider(key,label,min,max,step=1){
@@ -81,6 +81,21 @@ const edgeSelect=document.createElement('select');edgeSelect.innerHTML=`
   <option value="roberts">Roberts Cross</option>`;
 edgeSelect.onchange=()=>{settings.edgeMethod=edgeSelect.value;process();};
 edgeLabel.appendChild(edgeSelect);edgeMethodWrapper.appendChild(edgeLabel);controlsDiv.appendChild(edgeMethodWrapper); addSlider('edgeThreshold','Edge Threshold',0,255); addSlider('edgeOpacity','Edge Opacity',0,1,0.05);
+
+// Aspect ratio selector
+const aspectWrapper=document.createElement('div');aspectWrapper.className='control';
+const aspectLabel=document.createElement('label');aspectLabel.textContent='Aspect Ratio';
+const aspectSelect=document.createElement('select');aspectSelect.innerHTML=`
+  <option value="4:3">4:3</option>
+  <option value="16:9">16:9</option>
+  <option value="1:1">1:1</option>
+  <option value="original">Keep Original</option>`;
+aspectSelect.value=settings.aspectMode;
+aspectSelect.onchange=()=>{settings.aspectMode=aspectSelect.value;process();};
+aspectLabel.appendChild(aspectSelect);aspectWrapper.appendChild(aspectLabel);controlsDiv.appendChild(aspectWrapper);
+
+// Max height slider
+addSlider('maxHeight','Max Height',0,2160,10);
 
 function clamp(v){return Math.max(0,Math.min(255,v));}
 
@@ -143,30 +158,37 @@ pCtx.putImageData(new ImageData(base,w,h),0,0);
 }
 
 document.querySelector('input[type=file]').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{img.onload=()=>{
-  // --- Auto crop to 4:3 ---
+  // --- Determine crop based on aspect mode ---
   let srcW = img.width;
   let srcH = img.height;
-  const targetRatio = 4/3;
   let cropW = srcW;
   let cropH = srcH;
+  let cropX = 0;
+  let cropY = 0;
 
-  if (srcW/srcH > targetRatio) {
-    // too wide
-    cropW = Math.round(srcH * targetRatio);
-  } else if (srcW/srcH < targetRatio) {
-    // too tall
-    cropH = Math.round(srcW / targetRatio);
+  if (settings.aspectMode !== 'original') {
+    let targetRatio = 4/3;
+    if (settings.aspectMode === '16:9') targetRatio = 16/9;
+    if (settings.aspectMode === '1:1') targetRatio = 1;
+
+    if (srcW/srcH > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+      cropH = srcH;
+    } else if (srcW/srcH < targetRatio) {
+      cropW = srcW;
+      cropH = Math.round(srcW / targetRatio);
+    }
+
+    cropX = Math.floor((srcW - cropW) / 2);
+    cropY = Math.floor((srcH - cropH) / 2);
   }
 
-  const cropX = Math.floor((srcW - cropW) / 2);
-  const cropY = Math.floor((srcH - cropH) / 2);
-
-  // --- Scale down if taller than 1080 ---
+  // --- Scale down if taller than maxHeight (if >0) ---
   let finalW = cropW;
   let finalH = cropH;
-  if (finalH > 1080) {
-    const scale = 1080 / finalH;
-    finalH = 1080;
+  if (settings.maxHeight > 0 && finalH > settings.maxHeight) {
+    const scale = settings.maxHeight / finalH;
+    finalH = Math.round(settings.maxHeight);
     finalW = Math.round(finalW * scale);
   }
 
@@ -182,6 +204,5 @@ document.querySelector('input[type=file]').addEventListener('change',e=>{const f
 };img.src=ev.target.result;};r.readAsDataURL(f);});
 
 document.getElementById('downloadBtn').onclick=()=>{const a=document.createElement('a');a.href=previewCanvas.toDataURL('image/png');a.download='higurashi_style.png';a.click();};
-</script>
-</body>
+</script></body>
 </html>
