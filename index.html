@@ -2,8 +2,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Higurashi Background Image Filter – Web Version</title>
+<title>Higurashi/Umineko Background Image Filter – Web Version</title>
 <style>
+  .Header {
+    display: flex;
+    justify-content: space-between;
+  }
   .kofibutton {
     max-width: 200px;
   }
@@ -21,9 +25,21 @@
 </style>
 </head>
 <body>
-<h1>Higurashi-Style Image Processor (Accurate Web Replica)</h1>
+<div class="Header">
+<div class="left">
+<h1>Higurashi/Umineko Background Image Filter – Web Version</h1>
 <input type="file" class="file-input" accept="image/*" />
 <button id="downloadBtn">Download Processed Image</button>
+</div>
+<div class="right">
+<p>If you like this tool, please consider supporting me on Ko-Fi!</p>
+<a href="https://ko-fi.com/rwbyrocks">
+<center>
+<img src="support_me_on_kofi_dark.png" class="kofibutton" alt="Support me on Ko-Fi">
+</center>
+</a>
+</div>
+</div>
 <div class="layout">
   <div><h3>Original</h3><canvas id="originalCanvas"></canvas></div>
   <div><h3>Preview</h3><canvas id="previewCanvas"></canvas></div>
@@ -208,11 +224,5 @@ document.querySelector('input[type=file]').addEventListener('change',e=>{const f
 
 document.getElementById('downloadBtn').onclick=()=>{const a=document.createElement('a');a.href=previewCanvas.toDataURL('image/png');a.download='higurashi_style.png';a.click();};
 </script>
-<center>
-<p>If you like this tool, please consider supporting me on Ko-Fi!</p>
-<a href="https://ko-fi.com/rwbyrocks">
-  <img src="support_me_on_kofi_dark.png" class="kofibutton" alt="Support me on Ko-Fi">
-</a>
-</center>
 </body>
 </html>
