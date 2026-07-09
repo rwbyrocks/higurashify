@@ -21,12 +21,6 @@
 </style>
 </head>
 <body>
-<center>
-<p>If you like this tool, please consider supporting me on Ko-Fi!</p>
-<a href="https://ko-fi.com/rwbyrocks">
-  <img src="support_me_on_kofi_dark.png" class="kofibutton" alt="Support me on Ko-Fi">
-</a>
-</center>
 <h1>Higurashi-Style Image Processor (Accurate Web Replica)</h1>
 <input type="file" class="file-input" accept="image/*" />
 <button id="downloadBtn">Download Processed Image</button>
@@ -213,5 +207,12 @@ document.querySelector('input[type=file]').addEventListener('change',e=>{const f
 };img.src=ev.target.result;};r.readAsDataURL(f);});
 
 document.getElementById('downloadBtn').onclick=()=>{const a=document.createElement('a');a.href=previewCanvas.toDataURL('image/png');a.download='higurashi_style.png';a.click();};
-</script></body>
+</script>
+<center>
+<p>If you like this tool, please consider supporting me on Ko-Fi!</p>
+<a href="https://ko-fi.com/rwbyrocks">
+  <img src="support_me_on_kofi_dark.png" class="kofibutton" alt="Support me on Ko-Fi">
+</a>
+</center>
+</body>
 </html>
