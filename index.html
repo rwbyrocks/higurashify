@@ -30,8 +30,14 @@
 <div class="Header">
 <div class="left">
 <h1>Higurashi/Umineko Background Image Filter – Web Version</h1>
-<input type="file" class="file-input" accept="image/*" />
-<button id="downloadBtn">Download Processed Image</button>
+<input type="file" id="singleFile" class="file-input" accept="image/*" />
+<div style="margin:8px 0"><button id="downloadBtn">Download Processed Image</button></div>
+<hr style="border-color:#333;margin:14px 0">
+<h3>Bulk convert a folder</h3>
+<p>Select a folder of images. They will be processed with the current settings and packaged into one ZIP.</p>
+<input type="file" id="folderInput" class="file-input" accept="image/*" webkitdirectory multiple />
+<div><button id="bulkBtn">Convert Folder to ZIP</button></div>
+<p id="bulkStatus" role="status"></p>
 </div>
 <div class="right">
 <p>If you like this tool, please consider supporting me on Ko-Fi!</p>
@@ -46,7 +52,40 @@
   <div><h3>Original</h3><canvas id="originalCanvas"></canvas></div>
   <div><h3>Preview</h3><canvas id="previewCanvas"></canvas></div>
 </div>
-<div class="controls" id="controls"></div><script>
+<div class="controls" id="controls"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">
+
+document.getElementById('bulkBtn').onclick=async()=>{
+  const files=Array.from(document.getElementById('folderInput').files)
+    .filter(f=>f.type.startsWith('image/') || /\\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(f.name));
+  const status=document.getElementById('bulkStatus');
+  if(!files.length){status.textContent='Choose a folder containing images first.';return;}
+  if(typeof JSZip==='undefined'){status.textContent='ZIP library could not load. Check your internet connection and try again.';return;}
+  const btn=document.getElementById('bulkBtn'); btn.disabled=true;
+  const zip=new JSZip(); let done=0,failed=0;
+  try{
+    for(const file of files){
+      status.textContent=`Processing ${done+failed+1} of ${files.length}: ${file.name}`;
+      try{
+        sourceImage=await loadImageFile(file);
+        rebuildSource();
+        const blob=await new Promise((resolve,reject)=>previewCanvas.toBlob(b=>b?resolve(b):reject(new Error('PNG export failed')),'image/png'));
+        const relative=(file.webkitRelativePath||file.name).replace(/^.*?\//,'');
+        const safeName=relative.replace(/\\.[^.\\/]+$/,'')+'.png';
+        zip.file(safeName,blob); done++;
+      }catch(err){failed++;console.error(err);}
+    }
+    status.textContent=`Creating ZIP… (${done} converted${failed?`, ${failed} failed`:''})`;
+    const output=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(output); const a=document.createElement('a');
+    a.href=url;a.download='higurashi_style_bulk.zip';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    status.textContent=`Finished: ${done} images converted${failed?`, ${failed} failed`:''}. ZIP downloaded.`;
+  }catch(err){status.textContent='Bulk conversion failed: '+err.message;}
+  finally{btn.disabled=false;}
+};
+</script>
+<script>
 const originalCanvas = document.getElementById('originalCanvas');
 const previewCanvas = document.getElementById('previewCanvas');
 const oCtx = originalCanvas.getContext('2d');
@@ -54,6 +93,7 @@ const pCtx = previewCanvas.getContext('2d');
 const controlsDiv = document.getElementById('controls');
 
 let img = new Image();
+let sourceImage = null;
 let originalPixels = null;
 
 const settings = {
@@ -73,7 +113,8 @@ function addSlider(key,label,min,max,step=1){
   const w=document.createElement('div'); w.className='control';
   const l=document.createElement('label'); l.innerHTML=`${label}<span id='${key}Val'></span>`;
   const i=document.createElement('input'); i.type='range'; i.min=min; i.max=max; i.step=step; i.value=settings[key];
-  i.oninput=()=>{settings[key]=parseFloat(i.value);document.getElementById(key+'Val').textContent=i.value;process();};
+  i.oninput=()=>{settings[key]=parseFloat(i.value);document.getElementById(key+'Val').textContent=i.value;
+    if(key==='maxHeight') rebuildSource(); else process();};
   w.appendChild(l); w.appendChild(i); controlsDiv.appendChild(w);
   document.getElementById(key+'Val').textContent=i.value;
 }
@@ -112,7 +153,7 @@ const aspectSelect=document.createElement('select');aspectSelect.innerHTML=`
   <option value="1:1">1:1</option>
   <option value="original">Keep Original</option>`;
 aspectSelect.value=settings.aspectMode;
-aspectSelect.onchange=()=>{settings.aspectMode=aspectSelect.value;process();};
+aspectSelect.onchange=()=>{settings.aspectMode=aspectSelect.value;rebuildSource();};
 aspectLabel.appendChild(aspectSelect);aspectWrapper.appendChild(aspectLabel);controlsDiv.appendChild(aspectWrapper);
 
 // Max height slider
@@ -178,53 +219,77 @@ multiplyBlend(base,edgeImg,settings.edgeOpacity);}
 pCtx.putImageData(new ImageData(base,w,h),0,0);
 }
 
-document.querySelector('input[type=file]').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{img.onload=()=>{
-  // --- Determine crop based on aspect mode ---
-  let srcW = img.width;
-  let srcH = img.height;
-  let cropW = srcW;
-  let cropH = srcH;
-  let cropX = 0;
-  let cropY = 0;
-
-  if (settings.aspectMode !== 'original') {
-    let targetRatio = 4/3;
-    if (settings.aspectMode === '16:9') targetRatio = 16/9;
-    if (settings.aspectMode === '1:1') targetRatio = 1;
-
-    if (srcW/srcH > targetRatio) {
-      cropW = Math.round(srcH * targetRatio);
-      cropH = srcH;
-    } else if (srcW/srcH < targetRatio) {
-      cropW = srcW;
-      cropH = Math.round(srcW / targetRatio);
-    }
-
-    cropX = Math.floor((srcW - cropW) / 2);
-    cropY = Math.floor((srcH - cropH) / 2);
+function rebuildSource(){
+  if(!sourceImage) return;
+  const srcW=sourceImage.naturalWidth||sourceImage.width;
+  const srcH=sourceImage.naturalHeight||sourceImage.height;
+  let cropW=srcW,cropH=srcH,cropX=0,cropY=0;
+  if(settings.aspectMode!=='original'){
+    let targetRatio= settings.aspectMode==='16:9' ? 16/9 : settings.aspectMode==='1:1' ? 1 : 4/3;
+    if(srcW/srcH>targetRatio) cropW=Math.round(srcH*targetRatio);
+    else if(srcW/srcH<targetRatio) cropH=Math.round(srcW/targetRatio);
+    cropX=Math.floor((srcW-cropW)/2); cropY=Math.floor((srcH-cropH)/2);
   }
-
-  // --- Scale down if taller than maxHeight (if >0) ---
-  let finalW = cropW;
-  let finalH = cropH;
-  if (settings.maxHeight > 0 && finalH > settings.maxHeight) {
-    const scale = settings.maxHeight / finalH;
-    finalH = Math.round(settings.maxHeight);
-    finalW = Math.round(finalW * scale);
+  let finalW=cropW,finalH=cropH;
+  if(settings.maxHeight>0 && finalH>settings.maxHeight){
+    const scale=settings.maxHeight/finalH;
+    finalH=Math.round(settings.maxHeight); finalW=Math.round(finalW*scale);
   }
-
-  originalCanvas.width = previewCanvas.width = finalW;
-  originalCanvas.height = previewCanvas.height = finalH;
-
-  // Draw cropped + scaled
-  oCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, finalW, finalH);
-
-  const d = oCtx.getImageData(0, 0, finalW, finalH);
-  originalPixels = new Uint8ClampedArray(d.data);
+  originalCanvas.width=previewCanvas.width=finalW;
+  originalCanvas.height=previewCanvas.height=finalH;
+  oCtx.clearRect(0,0,finalW,finalH);
+  oCtx.drawImage(sourceImage,cropX,cropY,cropW,cropH,0,0,finalW,finalH);
+  originalPixels=new Uint8ClampedArray(oCtx.getImageData(0,0,finalW,finalH).data);
   process();
-};img.src=ev.target.result;};r.readAsDataURL(f);});
+}
+
+function loadImageFile(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const image=new Image();
+    image.onload=()=>{URL.revokeObjectURL(url);resolve(image);};
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not load '+file.name));};
+    image.src=url;
+  });
+}
+document.getElementById('singleFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try { sourceImage=await loadImageFile(f); rebuildSource(); }
+  catch(err){alert(err.message);}
+});
 
 document.getElementById('downloadBtn').onclick=()=>{const a=document.createElement('a');a.href=previewCanvas.toDataURL('image/png');a.download='higurashi_style.png';a.click();};
+
+
+document.getElementById('bulkBtn').onclick=async()=>{
+  const files=Array.from(document.getElementById('folderInput').files)
+    .filter(f=>f.type.startsWith('image/') || /\\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(f.name));
+  const status=document.getElementById('bulkStatus');
+  if(!files.length){status.textContent='Choose a folder containing images first.';return;}
+  if(typeof JSZip==='undefined'){status.textContent='ZIP library could not load. Check your internet connection and try again.';return;}
+  const btn=document.getElementById('bulkBtn'); btn.disabled=true;
+  const zip=new JSZip(); let done=0,failed=0;
+  try{
+    for(const file of files){
+      status.textContent=`Processing ${done+failed+1} of ${files.length}: ${file.name}`;
+      try{
+        sourceImage=await loadImageFile(file);
+        rebuildSource();
+        const blob=await new Promise((resolve,reject)=>previewCanvas.toBlob(b=>b?resolve(b):reject(new Error('PNG export failed')),'image/png'));
+        const relative=(file.webkitRelativePath||file.name).replace(/^.*?\//,'');
+        const safeName=relative.replace(/\\.[^.\\/]+$/,'')+'.png';
+        zip.file(safeName,blob); done++;
+      }catch(err){failed++;console.error(err);}
+    }
+    status.textContent=`Creating ZIP… (${done} converted${failed?`, ${failed} failed`:''})`;
+    const output=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(output); const a=document.createElement('a');
+    a.href=url;a.download='higurashi_style_bulk.zip';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    status.textContent=`Finished: ${done} images converted${failed?`, ${failed} failed`:''}. ZIP downloaded.`;
+  }catch(err){status.textContent='Bulk conversion failed: '+err.message;}
+  finally{btn.disabled=false;}
+};
 </script>
 </body>
 </html>
